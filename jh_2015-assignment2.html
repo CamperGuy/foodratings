@@ -1,0 +1,419 @@
+<html>
+    <head>
+        <style type="text/css">
+        * {
+            font-family:Arial, Helvetica, sans-serif;
+        }
+        #resultsTable {
+            border-style:solid;
+            border-color: black;
+            border-width: 2px;
+            width: 80%;
+            display: inline-block;
+            table-layout: fixed;
+        }
+        th{
+            font-weight: bold;
+            border-bottom: black;
+            border-bottom-style:solid;
+            border-collapse: collapse;
+            text-align: center;
+            padding: 5px;
+        }
+        .ratingsbtnTD{
+            text-align: center;
+        }
+        .rating{
+            text-align: center;
+        }
+        .date{
+            text-align: center;
+        }
+
+        #tableFooter{
+            padding-top: 10px;
+            width: 80%;
+            display: inline-block;
+            align-items: center;
+        }
+        #sideContent{
+            align-items: center;
+
+        }
+        .btn{
+            margin: 2px;
+            width: 30px;
+        }
+
+        #query{
+            display: inline-block;
+        }
+        ul{
+            background: #f7f7f7;
+            display: inline-block;
+            border: black;
+            border-style: solid;
+            border-width: 1px;
+        }
+        .ui-autocomplete {
+            border-radius: 0px;
+        }
+        .ui-autocomplete:hover {
+            background: #3175d4;
+        }
+        .ui-helper-hidden-accessible{
+            visibility: hidden;
+        }
+        </style>
+    
+        <script src='http://ajax.googleapis.com/ajax/libs/jquery/1.6.4/jquery.min.js?ver=3.3.1'></script>
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+        
+        <script src="https://code.jquery.com/jquery-3.4.1.js"></script>
+        <script src="https://code.jquery.com/ui/1.12.1/jquery-ui.js"></script>
+
+        <script>
+            var availableTags = [];
+            $( function() {
+                // initiate the autocomplete array
+                availableTags = [
+                "McDonalds",
+                "Greggs",
+                "Starbucks",
+                "Costa"
+                ];
+                // set the autocomplete attribute to the input field
+                $("#businessInput").autocomplete({
+                    source: availableTags
+                });
+            });
+    
+            var overviewURL = "https://www.cs.kent.ac.uk/people/staff/yh/co539_a2_data/hygiene.php?";
+            var mergeURL = "https://www.cs.kent.ac.uk/people/staff/yh/co539_a2_data/rating.php?";
+            var lastPage = 0;
+
+            $(document).ready(function () {
+                getLastPage();
+                getByPage();
+            });
+
+            // add the onsubmit eventhandler to the submit button of the query
+            $(document).on("submit", "#businessSearch", function(){
+                var name = $("#businessInput").first().val();
+
+                // if a name as been entered, filter by that name, but allow null or * to go 'back'
+                if (name.length != 0 && name != "*")
+                    getByBusinessName(name);
+
+                else{
+                    getLastPage();
+                    getByPage();
+                }
+
+                // prevent the page from reloading
+                event.preventDefault();
+            })
+            
+            
+            // gets what the last available page is
+            function getLastPage() {
+                $.get(overviewURL + 'op=pages', function(data) {
+                    // parse the data that came in as a JSON object
+                    var response = JSON.parse(data);           
+                    // set lastPage to be the response from the page         
+                    lastPage = response.pages;
+
+                    // generate new buttons for each page
+                    var buttonInserts = [];
+                    for (var i = 1; i <= lastPage; i++){
+                        buttonInserts.push("<button class='btn' id='btn" + i + "' onclick='getByPage(" + i + ")'" + ">" + i + "</button>");
+                    }
+                    // and append those buttons to the sideContent div
+                    $("#sideContent").append(buttonInserts);
+                }); 
+            }
+
+            // inserts the appropriate table headers
+            function insertOverviewHeaders(){
+                $("#resultsTable").append("<tr class='headers'><th class='headers'>Business Name</th><th class='headers'>Address</th><th class='headers'>Type</th><th class='headers'>Rating</th><th class='headers'>Last Inspection</th><th class='headers'>Customer Ratings</th></tr>");
+            }
+        
+            // Gets the hygine rating overview given by the page name
+            function getByPage(page = 1) {
+                
+
+                // clear the page and rebuilt the table
+                $("#resultsTable").empty();
+                insertOverviewHeaders(); 
+
+                $.get(overviewURL + 'op=get&page=' + page, function(data) {
+                    // newly generated objects get pushed into this array which will then be appended to the page
+                    var dataInsert = [];
+
+                    // for each unique JSON object...
+                    $.each(JSON.parse(data), function() {
+
+                        dataInsert.push("<tr>");
+
+                        // for each JSON attribute of such object
+                        $.each(this, function(key, value) {
+                            // put its values into a cell
+                            dataInsert.push("<td class=" + key + ">");
+                            dataInsert.push(value);
+                            dataInsert.push("</td>");
+                        }) 
+
+                        // and generate its corresponding buttons
+                        dataInsert.push("<td class='ratingsbtnTD'>");
+                        dataInsert.push("<button class='ratingsbtn'>☆</button>");
+                        dataInsert.push("</td>");
+                        dataInsert.push("</tr>");
+                    })
+
+                    // then when the table is ready
+                    $("#resultsTable").ready(function() {
+                        // append all the inserts
+                        $("#resultsTable").append(dataInsert.join("\n"));
+
+                        // then add an event handler to the ratings buttons
+                        $(".ratingsbtnTD").on("click", "button", function(){
+                            var name = $(this).parent().parent().children(".business")[0].innerHTML;
+                            var address = $(this).parent().parent().children(".address")[0].innerHTML;
+                            getCustomerRatings(name, address);
+                        })
+                    }); 
+                }); 
+            }
+
+            function formatNameAddress(string, commonTerms=null, checkPostcode = false){
+                // remove any kind of linebreaks
+                string = string.replace(/(\r\n|\n|\r)/gm, "");
+
+                // remove common terms if attribute has been set
+                if (commonTerms != null){
+                    for (var i = 0; i < commonTerms.length; i++)
+                        string = string.replace(commonTerms[i], "");
+                }
+
+                // remove postcodes and all commas if attribute has been set
+                if (checkPostcode == true){
+                    string = removePostcode(string);
+                    string = string.replace(/[,]/g, "");
+                }
+                return string;
+            }
+
+            function removePostcode(string){
+                /*
+                    keep the postcode-check as a regex which can then just be tested
+                    courtesy of the cabinet office
+                    https://webarchive.nationalarchives.gov.uk/+/http://www.cabinetoffice.gov.uk/media/291370/bs7666-v2-0-xsd-PostCodeType.htm
+                */
+                var postcodeRegex = /([Gg][Ii][Rr] 0[Aa]{2})|((([A-Za-z][0-9]{1,2})|(([A-Za-z][A-Ha-hJ-Yj-y][0-9]{1,2})|(([A-Za-z][0-9][A-Za-z])|([A-Za-z][A-Ha-hJ-Yj-y][0-9][A-Za-z]?))))\s?[0-9][A-Za-z]{2})/;
+
+                // get the last bit of the address
+                var lastValue = string.split(",").pop(); 
+
+                // remove the leading space
+                if (lastValue.charAt(0) == " ")
+                    lastValue = lastValue.slice(1, lastValue.length);
+                
+                // if this is a postcode, remove and return it from the string
+                if (postcodeRegex.test(lastValue) == true)
+                    string = string.replace(lastValue, "");
+
+                return string;
+            }
+
+            // displays an alert when matching name and address can be found in the alternative database
+            function getCustomerRatings(sourcename, sourceaddress){
+                // keep track of common words so they can be removed to reduce the data to its essentials for comparison
+                var commonRest = ["Restaurant", "Cafe", "Bar", "Kitchen", "Hotel", "Hotel & Restaurant", "Take Away", "Maidstone", "Limited"];
+                var commonAddr = ["Street", "Place", "Road", "Parade", "Maidstone", "Kent"];
+
+                // remove the breaklines at the beginning because the rest would fail if this isn't done...
+                var inputName = formatNameAddress(sourcename, null, false);
+                var inputAddress = formatNameAddress(sourceaddress, null, false);
+
+                // if the address contains the restaurant's name, remove it
+                if (inputAddress.includes(inputName)){
+                    inputAddress = inputAddress.replace(inputName, "");
+
+                    // If, as a result of that, the first char is a space, remove it
+                    if (inputAddress.charAt(0) == " ")
+                        inputAddress = inputAddress.slice(1, inputAddress.length);
+                }
+
+                // properly format name and elements
+                inputName = formatNameAddress(inputName, commonRest, false);
+                inputAddress = formatNameAddress(inputAddress, commonAddr, true);
+                
+                var responseName = [];
+                var responseAddress = [];
+                var responseRating = [];
+                var responseTotalRatings = [];
+
+                console.log("Name:\n" + inputName);
+                console.log("Address:\n" + inputAddress);
+
+                $.get(mergeURL + "businessName=" + inputName, function(data){
+                    // if the result is not empty
+                    if (Object.keys(data).length > 0){
+
+                        // Map the script-response to arrays
+                        for (var i = 0; i < Object.keys(data).length; i++){
+                            responseName[i] = data[i].businessName;
+                            responseAddress[i] = data[i].address;
+                            responseRating[i] = data[i].avgRating;
+                            responseTotalRatings[i] = data[i].totalRatings;
+                        }
+                        
+                        for (var i = 0; i < responseAddress.length; i++){
+                            // format the responseAddress in the same way
+                            responseAddress[i] = formatNameAddress(responseAddress[i], commonAddr, true);
+
+                            // break down each word of the address
+                            var responseElements = responseAddress[i].split(" ");
+                            var queryElements = inputAddress.split(" ");
+                            var match = false;
+
+                            // if responseElements has more stuff than the query
+                            for (var i = 0; i < responseElements.length; i++){
+                                if (i < queryElements.length){
+                                    // if the query address is included in the response
+                                    if (responseElements.includes(queryElements[i])){
+                                        match = true;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            // if queryElements has more stuff than the response
+                            for (var i = 0; i < queryElements.length; i++){
+                                // if the response address is included in the query
+                                if (i < responseElements.length){
+                                    if (queryElements.includes(responseElements[i])){
+                                        match = true;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            /*
+                                Due to an error in logic, it was possible for an alert to show
+                                up, displaying an establishment's name (iff there were multiple entries
+                                of it in the response data) with all other information being null
+                                This is preventing this from showing up
+                            */
+                            if (responseRating[i] == null && responseTotalRatings[i] == null)
+                                popup();
+                            else if (match)
+                                popup(responseName[i], sourceaddress, responseRating[i], responseTotalRatings[i]);
+                            else
+                                popup();
+                        }
+                    }
+                    else
+                        popup();
+                });
+            }
+
+            function popup(name = null, address = null, avgRating = null, totalRating = null){
+                if (name == null && address == null && avgRating == null && totalRating == null)
+                    alert("No Ratings available for this establishment");
+                else
+                    alert(name + " in" + address + "\n\nAverage Rating: " + avgRating + "\nTotal number of ratings: " + totalRating);
+            }
+
+            function getByBusinessName(name){
+                // clear the page
+                $("#resultsTable").empty();
+                sideContent.innerHTML = null;
+
+                $.get(overviewURL + "op=search&business=" + name, function(data){
+                    var table = document.getElementById("resultsTable");
+
+                    // if the search returns at least one element
+                    if (Object.keys(data).length > 2){
+
+                        // if the current search term is not included in the autocomplete list yet, then add it
+                        if (availableTags.includes(name) == false)
+                            availableTags.push(name);
+
+                        // only add the headers when a result has been returned
+                        insertOverviewHeaders();
+
+                        // prepare the data inserts
+                        var row = table.insertRow(1);
+                        var dataInsert = [];
+                        
+                        // for each unique JSON object...
+                        $.each(JSON.parse(data), function() {
+
+                            dataInsert.push("<tr>");
+
+                            // for each JSON attribute of such object
+                            $.each(this, function(key, value) {
+                                // put its values into a cell
+                                dataInsert.push("<td class=" + key + ">");
+                                dataInsert.push(value);
+                                dataInsert.push("</td>");
+                            }) 
+
+                            // and generate its corresponding buttons
+                            dataInsert.push("<td class='ratingsbtnTD'>");
+                            dataInsert.push("<button class='ratingsbtn'>☆</button>");
+                            dataInsert.push("</td>");
+                            dataInsert.push("</tr>");
+                        })
+
+                        // when the table is ready
+                        $("#resultsTable").ready(function() {
+                            // append all the inserts
+                            $("#resultsTable").append(dataInsert.join("\n"));
+
+                            // then add an event handler to the ratings buttons
+                            $(".ratingsbtnTD").on("click", "button", function(){
+                                var name = $(this).parent().parent().children(".business")[0].innerHTML;
+                                var address = $(this).parent().parent().children(".address")[0].innerHTML;
+                                getCustomerRatings(name, address);
+                            })
+                        }); 
+                    }
+                    else{
+                        // otherwise show an empty table saying that nothing has been found
+                        var emptyMessageRow = table.insertRow(0);
+                        var emptyMessageCell = emptyMessageRow.insertCell(0);
+                        emptyMessageCell.innerHTML = "There are no establishments fitting the given name";
+                    }
+                })
+            }
+        </script>
+    </head>
+
+    <body>
+        <div id='header'>
+            <h1>Food Rating Lookup</h1>
+            <h4>This page shows the hygine rating that different businesses in the Maidstone area have received.</br>
+                Some also have customer reviews available, which can be accessed by the "Customer Ratings" button corresponding with each business.</br>
+                The customer reviews database are managed externally, so some businesses might not have a customer rating available yet, but might have one added at a later point in time.
+            </h4>
+        </div>
+
+        <div id='query' class="ui-widget">
+            <form id="businessSearch">
+                <label>Business Name:</label>
+                <input id="businessInput" type="text">
+                <input type="submit">
+            </form>    
+        </div>
+
+        <div id='table'>
+            <table id="resultsTable"></table>
+        </div>
+
+        <div id='tableFooter'>
+            <div id="sideContent"></div>
+        </div>
+    </body>
+</html>
